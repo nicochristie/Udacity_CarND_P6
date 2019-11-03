@@ -17,7 +17,6 @@
 #include <vector>
 
 #include "helper_functions.h"
-#include "map.h"
 
 using std::string;
 using std::vector;
@@ -40,9 +39,9 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 
   num_particles = 50;  // TODO: Set the number of particles
   
-  normal_distribution<double> dist_x(0, std[0]);
-  normal_distribution<double> dist_y(0, std[1]);
-  normal_distribution<double> dist_theta(0, std[2]);
+  normal_distribution<double> dist_x(0.0, std[0]);
+  normal_distribution<double> dist_y(0.0, std[1]);
+  normal_distribution<double> dist_theta(0.0, std[2]);
   weights.resize(num_particles); // For resample()
   
   for (int i = 0; i < num_particles; i++) 
@@ -55,7 +54,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
     particle.weight = 1.0;    
     particles.push_back(particle);
     
-    weights[i] = 0.8;
+    weights[i] = 1.0;
   }
 
   is_initialized = true;  
@@ -71,9 +70,9 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
    *  http://www.cplusplus.com/reference/random/default_random_engine/
    */
   
-  normal_distribution<double> dist_x(0, std_pos[0]);
-  normal_distribution<double> dist_y(0, std_pos[1]);
-  normal_distribution<double> dist_theta(0, std_pos[2]);
+  normal_distribution<double> dist_x(0.0, std_pos[0]);
+  normal_distribution<double> dist_y(0.0, std_pos[1]);
+  normal_distribution<double> dist_theta(0.0, std_pos[2]);
 
   for (int i = 0; i < num_particles; i++)
   {
@@ -93,9 +92,11 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
     }
 
     // Add some noise
-    p.x += dist_x(gen);
-    p.y += dist_y(gen);
-    p.theta += dist_theta(gen);
+    //p.x += dist_x(gen);
+    //p.y += dist_y(gen);
+    //p.theta += dist_theta(gen);
+    
+    particles[i] = p;
   }
 }
 
@@ -152,28 +153,33 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
   for (int i = 0; i < num_particles; i++)
   {
     Particle p = particles[i];
+    weights[i] = 1.0;
     p.weight = 1.0;
     
     // Transform observations into map coordinates
     vector<LandmarkObs> transformedObservations;
-    for(unsigned int j = 0; j < observations.size(); j++) 
+    for (unsigned int j = 0; j < observations.size(); j++) 
     {
-      LandmarkObs to, o = observations[j];
-      to.id = o.id;
-      to.x = cos(p.theta)*o.x - sin(p.theta)*o.y + p.x;
-      to.y = sin(p.theta)*o.x + cos(p.theta)*o.y + p.y;
-      transformedObservations.push_back(to);
+      LandmarkObs o = observations[j];
+      transformedObservations.push_back(LandmarkObs {
+        o.id,
+        cos(p.theta)*o.x - sin(p.theta)*o.y + p.x,
+        sin(p.theta)*o.x + cos(p.theta)*o.y + p.y
+      });
     }
     
     // Keep only those Landmarks in range of sensor
     vector<LandmarkObs> inRangeLandmarks;
-    for(unsigned int j = 0; j < map_landmarks.landmark_list.size(); j++)
+    for (unsigned int j = 0; j < map_landmarks.landmark_list.size(); j++)
     {
-      Map::single_landmark_s l = map_landmarks.landmark_list[j];
-      double d = dist(p.x, p.y, l.x_f, l.y_f);
+      double d = dist(p.x, p.y, map_landmarks.landmark_list[j].x_f, map_landmarks.landmark_list[j].y_f);
 
-      if ( d <= sensor_range )
-        inRangeLandmarks.push_back(LandmarkObs{ l.id_i, l.x_f, l.y_f });
+      if (d <= sensor_range)
+        inRangeLandmarks.push_back(LandmarkObs { 
+          map_landmarks.landmark_list[j].id_i, 
+          map_landmarks.landmark_list[j].x_f, 
+          map_landmarks.landmark_list[j].y_f 
+        });
     }
     
     // Associate Data
@@ -183,27 +189,35 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     for (unsigned int j = 0; j < transformedObservations.size(); j++)
     {
       int matchIndex;
-      LandmarkObs o = transformedObservations[j];
+      LandmarkObs l, o = transformedObservations[j];
       
+      // Get the associated landmark
       for (unsigned int k = 0; k < inRangeLandmarks.size(); k++)
-      {
-        LandmarkObs l = inRangeLandmarks[k];
-        if (l.id == o.id) { matchIndex = k; break; }
-      }
+        if (inRangeLandmarks[k].id == o.id) { matchIndex = k; break; }
       
-      LandmarkObs l = inRangeLandmarks[matchIndex];
+      l = inRangeLandmarks[matchIndex];
       
       double dx = o.x - l.x, dy = o.y - l.y;
-      p.weight *= K * exp( -0.5 * (dx*dx/ux_s + dy*dy/uy_s) );
-      if (p.weight == 0) p.weight += EPS;
-      weights[i] = p.weight;
+      double w = K * exp( -0.5 * ((dx*dx/ux_s) + (dy*dy/uy_s)) );
+      if (w > 0) p.weight *= w;
+      else p.weight *= EPS;
 
+      if (p.weight == 0) p.weight += EPS;
+      
       //std::cout << "  ___________________________________________________________" << std::endl;
       //std::cout << "  o.id: " << o.id << ", match index: " << matchIndex << " | inRangeLandmarks[matchIndex].id: " << l.id << std::endl;
       //std::cout << "  dx: " << dx << ", dy: " << dy << std::endl;
       //std::cout << "Particle weight: " << p.weight << std::endl;
     }
+    
+    particles[i] = p;
+    weights[i] = p.weight;
   }
+  
+  // Normalise weights
+  double totalWeight = 0;
+  for (int i = 0; i < num_particles; i++) totalWeight += weights[i];
+  for (int i = 0; i < num_particles; i++) { particles[i].weight /= totalWeight; weights[i] /= totalWeight; }
 }
 
 void ParticleFilter::resample() {

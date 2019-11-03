@@ -118,7 +118,6 @@ int main() {
           double highest_weight = -1.0;
           Particle best_particle;
           double weight_sum = 0.0;
-          std::cout << "getting max weight from " << num_particles << " particles" << std::endl;
           for (int i = 0; i < num_particles; ++i) {
             if (particles[i].weight > highest_weight) {
               highest_weight = particles[i].weight;
