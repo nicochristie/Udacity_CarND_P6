@@ -22,8 +22,6 @@ using std::string;
 using std::vector;
 using namespace std;
 
-#define EPS 0.001
-
 std::default_random_engine gen;
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
@@ -48,9 +46,9 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   {
     Particle particle;
     particle.id = i;
-    particle.x = dist_x(gen);
-    particle.y = dist_y(gen);
-    particle.theta = dist_theta(gen);
+    particle.x = x + dist_x(gen);
+    particle.y = y + dist_y(gen);
+    particle.theta = theta + dist_theta(gen);
     particle.weight = 1.0;    
     particles.push_back(particle);
     
@@ -70,6 +68,7 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
    *  http://www.cplusplus.com/reference/random/default_random_engine/
    */
   
+  double EPS = 0.001;
   normal_distribution<double> dist_x(0.0, std_pos[0]);
   normal_distribution<double> dist_y(0.0, std_pos[1]);
   normal_distribution<double> dist_theta(0.0, std_pos[2]);
@@ -92,9 +91,9 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
     }
 
     // Add some noise
-    //p.x += dist_x(gen);
-    //p.y += dist_y(gen);
-    //p.theta += dist_theta(gen);
+    p.x += dist_x(gen);
+    p.y += dist_y(gen);
+    p.theta += dist_theta(gen);
     
     particles[i] = p;
   }
@@ -145,6 +144,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
    */
 
   // save constant values for weight calculation
+  double EPS = 1.0e-50;
   double K = 1 / (2 * M_PI * std_landmark[0] * std_landmark[1]);
   double ux_s = std_landmark[0] * std_landmark[0]; // mu X squared
   double uy_s = std_landmark[1] * std_landmark[1]; // mu Y squared
@@ -200,9 +200,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
       double dx = o.x - l.x, dy = o.y - l.y;
       double w = K * exp( -0.5 * ((dx*dx/ux_s) + (dy*dy/uy_s)) );
       if (w > 0) p.weight *= w;
-      else p.weight *= EPS;
-
-      if (p.weight == 0) p.weight += EPS;
+      else p.weight = EPS; // should not need this
       
       //std::cout << "  ___________________________________________________________" << std::endl;
       //std::cout << "  o.id: " << o.id << ", match index: " << matchIndex << " | inRangeLandmarks[matchIndex].id: " << l.id << std::endl;
@@ -237,7 +235,7 @@ void ParticleFilter::resample() {
   }
   
   vector<Particle> newParticles(num_particles);
-  uniform_real_distribution<double> distBeta(0.0, maxWeight);
+  uniform_real_distribution<double> distBeta(0.0, 2*maxWeight);
   uniform_int_distribution<int> distIndex(0, num_particles - 1);
 
   // Spin the wheel
